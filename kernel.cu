@@ -62,6 +62,50 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 __global__ void movingSumSharedMemStatic(int* vec, int* result_vec, int size)
 {
     //ToDo
+    __shared__ int tile[BLOCKSIZE];
+    int globalIdx = threadIdx.x + blockIdx.x * blockDim.x;
+    int sharedIdx = threadIdx.x;
+
+    tile[sharedIdx] = vec[globalIdx];
+    __syncthreads();
+   
+
+
+
+    int result = 0;
+    
+    int lPShared = sharedIdx - RADIUS;
+    int rPShared = sharedIdx + RADIUS + 1;
+   
+    int globalMemBeg = 0;
+    int globalMemEnd = 0;
+
+    if (rPShared > BLOCKSIZE) {
+        int elementsInGlobal = rPShared - BLOCKSIZE;
+        globalMemBeg = globalIdx + (RADIUS - elementsInGlobal);
+        globalMemEnd = globalIdx + RADIUS;
+        rPShared = BLOCKSIZE;
+        
+    }
+    if (lPShared < 0) {
+        int elementsInGlobal = lPShared * -1;
+        globalMemBeg = globalIdx - RADIUS;
+        globalMemEnd = globalIdx - RADIUS + elementsInGlobal;
+        lPShared = 0;
+    }
+
+    if (globalMemEnd >= size) globalMemEnd = size;
+    if (globalMemBeg < 0) globalMemBeg = 0;
+
+    for (int i = lPShared; i < rPShared; i++) {
+        result += tile[i];
+    }
+
+    for (int i = globalMemBeg; i < globalMemEnd; i++) {
+        result += vec[i];
+    }
+
+     result_vec[globalIdx] = result;
 }
 
 
@@ -213,7 +257,7 @@ int main(void)
     int nbr_blocks = ((WIDTH % BLOCKSIZE) != 0) ? (WIDTH / BLOCKSIZE + 1) : (WIDTH / BLOCKSIZE);
     movingSumGlobal << <nbr_blocks, BLOCKSIZE >> > (deviceVecInput, deviceVecOutput1, WIDTH);
     gpuErrCheck(cudaPeekAtLastError());
-    //ToDo: movingSumSharedMemStatic << <nbr_blocks, BLOCKSIZE >> > (deviceVecInput, deviceVecOutput2, WIDTH);
+    movingSumSharedMemStatic << <nbr_blocks, BLOCKSIZE >> > (deviceVecInput, deviceVecOutput2, WIDTH);
     gpuErrCheck(cudaPeekAtLastError());
     //ToDo: movingSumSharedMemDynamic <<<nbr_blocks, BLOCKSIZE, ?????????? >>> (deviceVecInput, deviceVecOutput3, WIDTH);
     gpuErrCheck(cudaPeekAtLastError());
